@@ -70,8 +70,8 @@
 //Enforce only using PWM pins on the ESP32
 #define ENFORCE_PINS
 // Default Arduino Servo.h
-#define DEFAULT_uS_LOW 544
-#define DEFAULT_uS_HIGH 2400
+#define DEFAULT_uS_LOW 500
+#define DEFAULT_uS_HIGH 2500
 
 // Values for TowerPro MG995 large servos (and many other hobbyist servos)
 //#define DEFAULT_uS_LOW 1000        // 1000us
@@ -88,16 +88,19 @@
 #else
 #define MINIMUM_TIMER_WIDTH 10
 #define MAXIMUM_TIMER_WIDTH 20
-#define DEFAULT_TIMER_WIDTH 10
+#define DEFAULT_TIMER_WIDTH 16
 #endif
-#define DEFAULT_TIMER_WIDTH_TICKS 1024
+#define DEFAULT_TIMER_WIDTH_TICKS 65536
 
 #define ESP32_Servo_VERSION           1     // software version of this library
 
 #define MIN_PULSE_WIDTH       500     // the shortest pulse sent to a servo  
 #define MAX_PULSE_WIDTH      2500     // the longest pulse sent to a servo 
-#define DEFAULT_PULSE_WIDTH  1500     // default pulse width when servo is attached
-#define DEFAULT_PULSE_WIDTH_TICKS 4825
+#define DEFAULT_PULSE_WIDTH  2500     // default pulse width when servo is attached
+#define DEFAULT_PULSE_WIDTH_TICKS 8192
+#define DEFAULT_HALF_PULSE_WIDTH_TICKS 4096
+#define DEFAULT_DELAY_DURATION_PERIOD 25
+#define DEFAULT_DELAY_DURATION 20
 //#define REFRESH_CPS            50
 #define REFRESH_USEC         20000
 
@@ -126,6 +129,19 @@
  ** ledc: 15 => Group: 1, Channel: 7, Timer: 3
  */
 
+namespace esp32servo {
+
+enum class ServoType {
+	NoneType = 0,
+	Common180,
+	Common360,
+	SG90_180,
+	SG90_360,
+	MG90_180,
+	MG90_360,
+};
+
+
 class Servo {
 
 public:
@@ -148,22 +164,32 @@ public:
 		REFRESH_CPS=hertz;
 		setTimerWidth(this->timer_width);
 	}
+
+	void setupServoType(ServoType servoType) {
+		this->_servoType = servoType;
+	}
+
+	void writeAngle(int angle);
+	void setPulseWidth(int value);
 private:
 	int usToTicks(int usec);
 	int ticksToUs(int ticks);
-//   static int ServoCount;                             // the total number of attached servos
-//   static int ChannelUsed[];                          // used to track whether a channel is in service
-//   int servoChannel = 0;                              // channel number for this servo
+	void _writeAngle360(int angle);
+	void _checkSoftIntFor360();
 
 	int min = DEFAULT_uS_LOW;           // minimum pulse width for this servo
 	int max = DEFAULT_uS_HIGH;            // maximum pulse width for this servo
 	int pinNumber = 0;                      // GPIO pin assigned to this channel
 	int timer_width = DEFAULT_TIMER_WIDTH; // ESP32 allows variable width PWM timers
-	int ticks = DEFAULT_PULSE_WIDTH_TICKS; // current pulse width on this channel
+	// int ticks = DEFAULT_PULSE_WIDTH_TICKS; // current pulse width on this channel
 	int timer_width_ticks = DEFAULT_TIMER_WIDTH_TICKS; // no. of ticks at rollover; varies with width
 	ESP32PWM * getPwm(); // get the PWM object
 	ESP32PWM pwm;
 	int REFRESH_CPS = 50;
 
+	ServoType _servoType = ServoType::Common180;
+	int pulse_width;
 };
-#endif
+
+}       // end of namespace esp32servo
+#endif  // endif

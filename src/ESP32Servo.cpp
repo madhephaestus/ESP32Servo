@@ -53,17 +53,17 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 #include <ESP32Servo.h>
 #include "Arduino.h"
 
-//
+namespace esp32servo {
+
 Servo::Servo()
 {		// initialize this channel with plausible values, except pin # (we set pin # when attached)
 	REFRESH_CPS = 50;
-	this->ticks = DEFAULT_PULSE_WIDTH_TICKS;
 	this->timer_width = DEFAULT_TIMER_WIDTH;
 	this->pinNumber = -1;     // make it clear that we haven't attached a pin to this channel
 	this->min = DEFAULT_uS_LOW;
 	this->max = DEFAULT_uS_HIGH;
 	this->timer_width_ticks = pow(2,this->timer_width);
-
+    this->pulse_width = DEFAULT_PULSE_WIDTH_TICKS;
 }
 ESP32PWM * Servo::getPwm(){
 
@@ -89,7 +89,7 @@ int Servo::attach(int pin, int min, int max)
             // OK to proceed; first check for new/reuse
             if (this->pinNumber < 0) // we are attaching to a new or previously detached pin; we need to initialize/reinitialize
             {
-                this->ticks = DEFAULT_PULSE_WIDTH_TICKS;
+                this->pulse_width = DEFAULT_PULSE_WIDTH_TICKS;
                 this->timer_width = DEFAULT_TIMER_WIDTH;
                 this->timer_width_ticks = pow(2,this->timer_width);
             }
@@ -168,9 +168,9 @@ void Servo::writeMicroseconds(int value)
             value = this->max;
 
         value = usToTicks(value);  // convert to ticks
-        this->ticks = value;
+        this->pulse_width = value;
         // do the actual write
-        pwm.write( this->ticks);
+        pwm.write( this->pulse_width);
     }
 }
 
@@ -190,7 +190,7 @@ int Servo::readMicroseconds()
     int pulsewidthUsec;
     if (this->attached())
     { 
-        pulsewidthUsec = ticksToUs(this->ticks);
+        pulsewidthUsec = ticksToUs(this->pulse_width);
     }
     else
     {
@@ -220,11 +220,11 @@ void Servo::setTimerWidth(int value)
     // if positive multiply by diff; if neg, divide
     if (widthDifference > 0)
     {
-        this->ticks = widthDifference * this->ticks;
+        this->pulse_width = widthDifference * this->pulse_width;
     }
     else if (widthDifference < 0)
     {
-        this->ticks = this->ticks/-widthDifference;
+        this->pulse_width = this->pulse_width/-widthDifference;
     }
     
     this->timer_width = value;
@@ -254,4 +254,69 @@ int Servo::ticksToUs(int ticks)
     return (int)((double)ticks * ((double)REFRESH_USEC / (double)this->timer_width_ticks)/(((double)REFRESH_CPS)/50.0));
 }
 
- 
+void Servo::writeAngle(int angle)
+{
+    if (this->_servoType == ServoType::Common360) {
+        _writeAngle360(angle);
+        return;
+    }
+
+    if (angle < 0) {
+        angle = 0;
+    } else if (angle > 180) {
+        angle = 180;
+    }
+    
+    write(angle);
+}
+
+void Servo::setPulseWidth(int value)
+{
+    this->writeMicroseconds(value);
+}
+
+/**
+ * @details _writeAngle360 Primarily used for simulating a 360-degree rotation following specified angles.
+ *          Due to the inherent design limitations of MG90 or SG90 servos, which do not support a 360-degree
+ *          rotation according to specified angles, using this function to achieve the desired rotation
+ *          may pose some unfriendly implications for the servo's lifespan. Please verify this independently.
+ *          BE NOTICED that this function only works under 50hz freq and 16 timer_length, pulse_width=2500&1250 well. if you set other
+ *          freq or timer length, please check it out.
+ *          It is just a soft interrupt, there is a certain margin of error, making it unable to be precise. The error is around 10 degrees.
+ * 
+ * @param angle The angle to be set, positive to rotate counterclockwisely, negative to rorate clockwisely.
+*/
+void Servo::_writeAngle360(int angle)
+{
+    if (angle < -360 || angle > 360) {
+        angle = angle % 360;
+    }
+
+    int target = angle > 0 ? angle : (-1 * angle);
+    int delay_duration = (int)((target /360.0) * DEFAULT_DELAY_DURATION_PERIOD * DEFAULT_DELAY_DURATION);
+
+    if (angle < 0) {
+        this->pwm.write(DEFAULT_PULSE_WIDTH_TICKS);
+        delay(2);
+        this->pwm.write(DEFAULT_HALF_PULSE_WIDTH_TICKS);
+        delay(delay_duration * 2.6);
+        this->pwm.write(0);
+        return;
+    }
+
+    this->pwm.write(DEFAULT_PULSE_WIDTH_TICKS);
+    delay(delay_duration);
+    this->pwm.write(0);
+}
+
+void Servo::_checkSoftIntFor360()
+{
+    if (this->REFRESH_CPS != 50) {
+        this->setPeriodHertz(50);
+    }
+    if (this->timer_width != 16) {
+        this->setTimerWidth(16);
+    }
+}
+
+}  // end of namespace esp32servo 
