@@ -51,7 +51,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 */
 
 #include <ESP32Servo.h>
-#include "Arduino.h"
+#if defined(ARDUINO)
+    #include "Arduino.h"
+#endif
 
 //
 Servo::Servo()
