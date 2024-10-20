@@ -334,6 +334,9 @@ void ESP32PWM::attachPin(uint8_t pin) {
 void ESP32PWM::attachPin(uint8_t pin, double freq, uint8_t resolution_bits) {
 
 	if (hasPwm(pin)){
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+                this->pin = pin; // Because we require the pin number in setup()
+#endif
 		int ret=setup(freq, resolution_bits);
 		ESP_LOGW(TAG, "Pin Setup %d with code %d",pin,ret);
 	}
