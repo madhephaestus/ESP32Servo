@@ -24,6 +24,13 @@
 #define USABLE_ESP32_PWM (NUM_PWM-PWM_BASE_INDEX)
 #include <cstdint>
 
+#if !defined(ESP_ARDUINO_VERSION)
+#define ESP_ARDUINO_VERSION 0x010101 // Version 1.1.1
+#endif
+#if !defined(ESP_ARDUINO_VERSION_VAL)
+#define ESP_ARDUINO_VERSION_VAL(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
+#endif
+
 class ESP32PWM {
 private:
 
