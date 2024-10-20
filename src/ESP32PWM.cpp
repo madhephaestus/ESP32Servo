@@ -167,7 +167,7 @@ double ESP32PWM::setup(double freq, uint8_t resolution_bits) {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
 		ledcDetach(pin);
-		double val = ledcAttach(getPin(), freq, resolution_bits);
+		double val = ledcAttach(pin, freq, resolution_bits);
 #else
 		ledcDetachPin(pin);
 		double val = ledcSetup(getChannel(), freq, resolution_bits);
