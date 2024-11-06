@@ -8,6 +8,14 @@
 #include <ESP32PWM.h>
 #include "esp32-hal-ledc.h"
 
+#if !defined(ESP_ARDUINO_VERSION)
+#define ESP_ARDUINO_VERSION 0x010101 // Version 1.1.1
+#define _ESP_ARDUINO_VERSION_LOCALLY_DEFINED // to undef it at the end of this file
+#endif
+#if !defined(ESP_ARDUINO_VERSION_VAL)
+#define ESP_ARDUINO_VERSION_VAL(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
+#endif
+
 // initialize the class variable ServoCount
 int ESP32PWM::PWMCount = -1;              // the total number of attached servos
 bool  ESP32PWM::explicateAllocationMode=false;

@@ -24,13 +24,6 @@
 #define USABLE_ESP32_PWM (NUM_PWM-PWM_BASE_INDEX)
 #include <cstdint>
 
-#if !defined(ESP_ARDUINO_VERSION)
-#define ESP_ARDUINO_VERSION 0x010101 // Version 1.1.1
-#endif
-#if !defined(ESP_ARDUINO_VERSION_VAL)
-#define ESP_ARDUINO_VERSION_VAL(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
-#endif
-
 class ESP32PWM {
 private:
 
@@ -57,7 +50,8 @@ private:
 		return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 	}
 
-	bool setup(uint8_t pin, double freq, uint8_t resolution_bits=10);
+	double setup(double freq, uint8_t resolution_bits=10);
+    bool setup(uint8_t pin, double freq, uint8_t resolution_bits);
 	//channel 0-15 resolution 1-16bits freq limits depend on resolution9
 	bool attachPin(uint8_t pin);
 	// pin allocation
