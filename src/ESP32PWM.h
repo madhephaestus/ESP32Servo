@@ -51,8 +51,9 @@ private:
 	}
 
 	double setup(double freq, uint8_t resolution_bits=10);
+    bool setup(uint8_t pin, double freq, uint8_t resolution_bits);
 	//channel 0-15 resolution 1-16bits freq limits depend on resolution9
-	void attachPin(uint8_t pin);
+	bool attachPin(uint8_t pin);
 	// pin allocation
 	void deallocate();
 public:
