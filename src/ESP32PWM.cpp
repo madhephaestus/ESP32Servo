@@ -30,8 +30,13 @@ void ESP32PWM::allocateTimer(int timerNumber){
 		return;
 	if(ESP32PWM::explicateAllocationMode==false){
 		ESP32PWM::explicateAllocationMode=true;
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		int maxChannelsPerTimer = 2; // ESP32-S3 has only 2 channels per timer
+#else
+		int maxChannelsPerTimer = 4; // Other ESP32 variants have 4 channels per timer
+#endif
 		for(int i=0;i<4;i++)
-			ESP32PWM::timerCount[i]=4;// deallocate all timers to start mode
+			ESP32PWM::timerCount[i]=maxChannelsPerTimer;// deallocate all timers to start mode
 	}
 	ESP32PWM::timerCount[timerNumber]=0;
 }
@@ -79,6 +84,25 @@ double ESP32PWM::_ledcSetupTimerFreq(uint8_t pin, double freq,
 }
 
 int ESP32PWM::timerAndIndexToChannel(int timerNum, int index) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	// ESP32-S3 has only 8 LEDC channels (0-7), not 16!
+	// Timer 0: channels 0, 1
+	// Timer 1: channels 2, 3  
+	// Timer 2: channels 4, 5
+	// Timer 3: channels 6, 7
+	int channels[4][2] = {
+		{0, 1},   // Timer 0
+		{2, 3},   // Timer 1  
+		{4, 5},   // Timer 2
+		{6, 7}    // Timer 3
+	};
+	
+	if (timerNum >= 0 && timerNum < 4 && index >= 0 && index < 2) {
+		return channels[timerNum][index];
+	}
+	return -1;
+#else
+	// Original logic for other ESP32 variants
 	int localIndex = 0;
 	for (int j = 0; j < NUM_PWM; j++) {
 		if (((j / 2) % 4) == timerNum) {
@@ -89,22 +113,28 @@ int ESP32PWM::timerAndIndexToChannel(int timerNum, int index) {
 		}
 	}
 	return -1;
+#endif
 }
 int ESP32PWM::allocatenext(double freq) {
 	long freqlocal = (long) freq;
 	if (pwmChannel < 0) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		int maxChannelsPerTimer = 2; // ESP32-S3 has only 2 channels per timer
+#else
+		int maxChannelsPerTimer = 4; // Other ESP32 variants have 4 channels per timer
+#endif
 		for (int i = 0; i < 4; i++) {
 			bool freqAllocated = ((timerFreqSet[i] == freqlocal)
 					|| (timerFreqSet[i] == -1));
-			if (freqAllocated && timerCount[i] < 4) {
+			if (freqAllocated && timerCount[i] < maxChannelsPerTimer) {
 				if (timerFreqSet[i] == -1) {
 					//Serial.println("Starting timer "+String(i)+" at freq "+String(freq));
 					timerFreqSet[i] = freqlocal;
 				}
-				//Serial.println("Free channel timer "+String(i)+" at freq "+String(freq)+" remaining "+String(4-timerCount[i]));
+				//Serial.println("Free channel timer "+String(i)+" at freq "+String(freq)+" remaining "+String(maxChannelsPerTimer-timerCount[i]));
 
 				timerNum = i;
-				for (int index=0; index<4; ++index)
+				for (int index=0; index<maxChannelsPerTimer; ++index)
 				{
 					int myTimerNumber = timerAndIndexToChannel(timerNum,index);
 					if ((myTimerNumber >= 0)  && (!ChannelUsed[myTimerNumber]))
