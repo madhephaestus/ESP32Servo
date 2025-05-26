@@ -79,25 +79,26 @@ double ESP32PWM::_ledcSetupTimerFreq(uint8_t pin, double freq,
 }
 
 int ESP32PWM::timerAndIndexToChannel(int timerNum, int index) {
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-	// ESP32-S3 has only 8 LEDC channels (0-7), not 16!
+#if MAX_CHANNELS_PER_TIMER == 2
+	// For variants with 2 channels per timer (ESP32-S2, ESP32-S3)
 	// Timer 0: channels 0, 1
 	// Timer 1: channels 2, 3  
 	// Timer 2: channels 4, 5
 	// Timer 3: channels 6, 7
-	int channels[4][2] = {
-		{0, 1},   // Timer 0
-		{2, 3},   // Timer 1  
-		{4, 5},   // Timer 2
-		{6, 7}    // Timer 3
-	};
-	
-	if (timerNum >= 0 && timerNum < 4 && index >= 0 && index < 2) {
-		return channels[timerNum][index];
+	if (timerNum >= 0 && timerNum < 4 && index >= 0 && index < MAX_CHANNELS_PER_TIMER) {
+		return timerNum * MAX_CHANNELS_PER_TIMER + index;
+	}
+	return -1;
+#elif MAX_CHANNELS_PER_TIMER == 3
+	// For variants with 3 channels per timer (ESP32-C3)
+	// Timer 0: channels 0, 1, 2
+	// Timer 1: channels 3, 4, 5
+	if (timerNum >= 0 && timerNum < 2 && index >= 0 && index < MAX_CHANNELS_PER_TIMER) {
+		return timerNum * MAX_CHANNELS_PER_TIMER + index;
 	}
 	return -1;
 #else
-	// Original logic for other ESP32 variants
+	// Original logic for ESP32 Classic (4 channels per timer)
 	int localIndex = 0;
 	for (int j = 0; j < NUM_PWM; j++) {
 		if (((j / 2) % 4) == timerNum) {
