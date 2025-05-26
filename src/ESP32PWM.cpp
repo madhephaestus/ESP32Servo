@@ -30,13 +30,8 @@ void ESP32PWM::allocateTimer(int timerNumber){
 		return;
 	if(ESP32PWM::explicateAllocationMode==false){
 		ESP32PWM::explicateAllocationMode=true;
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-		int maxChannelsPerTimer = 2; // ESP32-S3 has only 2 channels per timer
-#else
-		int maxChannelsPerTimer = 4; // Other ESP32 variants have 4 channels per timer
-#endif
 		for(int i=0;i<4;i++)
-			ESP32PWM::timerCount[i]=maxChannelsPerTimer;// deallocate all timers to start mode
+			ESP32PWM::timerCount[i]=MAX_CHANNELS_PER_TIMER;// deallocate all timers to start mode
 	}
 	ESP32PWM::timerCount[timerNumber]=0;
 }
@@ -118,15 +113,10 @@ int ESP32PWM::timerAndIndexToChannel(int timerNum, int index) {
 int ESP32PWM::allocatenext(double freq) {
 	long freqlocal = (long) freq;
 	if (pwmChannel < 0) {
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-		int maxChannelsPerTimer = 2; // ESP32-S3 has only 2 channels per timer
-#else
-		int maxChannelsPerTimer = 4; // Other ESP32 variants have 4 channels per timer
-#endif
 		for (int i = 0; i < 4; i++) {
 			bool freqAllocated = ((timerFreqSet[i] == freqlocal)
 					|| (timerFreqSet[i] == -1));
-			if (freqAllocated && timerCount[i] < maxChannelsPerTimer) {
+			if (freqAllocated && timerCount[i] < MAX_CHANNELS_PER_TIMER) {
 				if (timerFreqSet[i] == -1) {
 					//Serial.println("Starting timer "+String(i)+" at freq "+String(freq));
 					timerFreqSet[i] = freqlocal;
@@ -134,7 +124,7 @@ int ESP32PWM::allocatenext(double freq) {
 				//Serial.println("Free channel timer "+String(i)+" at freq "+String(freq)+" remaining "+String(maxChannelsPerTimer-timerCount[i]));
 
 				timerNum = i;
-				for (int index=0; index<maxChannelsPerTimer; ++index)
+				for (int index=0; index<MAX_CHANNELS_PER_TIMER; ++index)
 				{
 					int myTimerNumber = timerAndIndexToChannel(timerNum,index);
 					if ((myTimerNumber >= 0)  && (!ChannelUsed[myTimerNumber]))
