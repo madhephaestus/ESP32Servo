@@ -132,7 +132,7 @@ int ESP32PWM::allocatenext(double freq) {
 		return pwmChannel;
 	}
 	ESP_LOGE(TAG, 
-			"ERROR All PWM timers allocated! Can't accomodate %d Hz\r\nHalting...", freq);
+			"ERROR All PWM timers allocated! Can't accomodate %.3f Hz\r\nHalting...", freq);
 	while (1)
 		;
 }
@@ -316,7 +316,7 @@ void ESP32PWM::attachPin(uint8_t pin) {
 #endif
 		if(success)
 			return;
-		ESP_LOGE(TAG, "ERROR PWM channel failed to configure on!",pin);
+		ESP_LOGE(TAG, "ERROR PWM channel failed to configure on pin %d!", pin);
 		return;
 	}
 		
@@ -390,10 +390,10 @@ bool ESP32PWM::checkFrequencyForSideEffects(double freq) {
 					ESP_LOGW(TAG, 
 							"\tWARNING PWM channel %d	\
 							 shares a timer with channel %d\n	\
-							\tchanging the frequency to %d		\
+							\tchanging the frequency to %.3f		\
 							Hz will ALSO change channel %d	\
-							\n\tfrom its previous frequency of %d Hz\n "
-								,pwmChannel, pwm, freq,pwm, ChannelUsed[pwm]->myFreq);
+							\n\tfrom its previous frequency of %.3f Hz\n "
+								,pwmChannel, pwm, freq, pwm, ChannelUsed[pwm]->myFreq);
 					ChannelUsed[pwm]->myFreq = freq;
 				}
 			}
