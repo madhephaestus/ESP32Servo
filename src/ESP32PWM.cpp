@@ -336,7 +336,7 @@ void ESP32PWM::attachPin(uint8_t pin, double freq, uint8_t resolution_bits) {
 	if (hasPwm(pin)){
         this->pin = pin;
 		int ret=setup(freq, resolution_bits);
-		ESP_LOGW(TAG, "Pin Setup %d with code %d",pin,ret);
+		ESP_LOGI(TAG, "Pin Setup %d with code %d",pin,ret);
 	    attach(pin);
 	}
 	else
