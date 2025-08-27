@@ -20,6 +20,16 @@
 #define NUM_PWM 16
 #endif
 
+// Define maximum channels per timer for different ESP32 variants
+// https://docs.espressif.com/projects/arduino-esp32/en/latest/api/timer.html
+#if defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
+#define MAX_CHANNELS_PER_TIMER 2  // 8 channels / 4 timers = 2 per timer
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+#define MAX_CHANNELS_PER_TIMER 3  // 6 channels / 2 timers = 3 per timer
+#else
+#define MAX_CHANNELS_PER_TIMER 4  // ESP32 Classic: 16 channels / 4 timers = 4 per timer
+#endif
+
 #define PWM_BASE_INDEX 0
 #define USABLE_ESP32_PWM (NUM_PWM-PWM_BASE_INDEX)
 #include <cstdint>
