@@ -1,13 +1,52 @@
-# Servo Library for ESP32
+# Enhanced Servo Library for ESP32
 
-Specifically for the V3.0.0 of Arduino ESP32. All ADC's have been updated to work correctly with the new release
+Compatible with Arduino ESP32 v3.0.0+ with advanced PWM hardware support.
 
 https://github.com/espressif/arduino-esp32/releases
 
-This library attempts to faithfully replicate the semantics of the
-Arduino Servo library (see http://www.arduino.cc/en/Reference/Servo)
-for the ESP32, with two (optional) additions. The two new functions
-expose the ability of the ESP32 PWM timers to vary timer width.
+This library provides enhanced PWM control for ESP32 boards, faithfully replicating Arduino Servo semantics while adding advanced hardware support:
+
+## Key Features
+
+- **ESP32S3 MCPWM Support**: Hardware-accelerated servo control for optimal timing precision
+- **Dual Hardware Architecture**: 20 PWM channels (8 LEDC + 12 MCPWM) with intelligent allocation
+- **Flexible Frequency Modes**: Variable-frequency PWM and fixed-frequency servo control
+- **Automatic Fallback**: Seamless hardware allocation when preferred resources are unavailable
+- **Backward Compatible**: Drop-in replacement for existing Arduino Servo code
+
+## Hardware Support
+
+| ESP32 Variant | LEDC Channels | MCPWM Channels | Total Channels |
+|---------------|---------------|----------------|----------------|
+| ESP32S3       | 8             | 12             | 20             |
+| ESP32S2       | 8             | -              | 8              |
+| ESP32         | 16            | -              | 16             |
+| ESP32C3       | 6             | -              | 6              |
+
+## Usage Examples
+
+### Basic Servo Control
+```cpp
+#include <ESP32Servo.h>
+
+Servo myservo;
+myservo.attach(18);        // Attach to pin 18
+myservo.write(90);         // Set to 90 degrees
+```
+
+### Advanced PWM Control
+```cpp
+#include <ESP32PWM.h>
+
+// Variable frequency (default) - LEDC preferred
+ESP32PWM pwm1;             // or ESP32PWM pwm1(true);
+
+// Fixed frequency - MCPWM preferred
+ESP32PWM pwm2(false);      // Optimal for servos
+
+pwm1.attachPin(19, 1000, 10);  // 1kHz, 10-bit resolution
+pwm2.attachPin(21, 50, 10);    // 50Hz, 10-bit resolution
+```
 # Documentation by Doxygen
 
 [ESP32Servo Doxygen](https://madhephaestus.github.io/ESP32Servo/annotated.html)
@@ -91,4 +130,8 @@ MINIMUM pulse with: 500us
 
 MAXIMUM pulse with: 2500us
 
-MAXIMUM number of servos: 16 (this is the number of PWM channels in the ESP32)  
+MAXIMUM number of servos: Varies by ESP32 variant
+- ESP32S3: 20 channels (8 LEDC + 12 MCPWM)
+- ESP32: 16 channels (16 LEDC)
+- ESP32S2: 8 channels (8 LEDC)
+- ESP32C3: 6 channels (6 LEDC)

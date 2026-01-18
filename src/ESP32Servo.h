@@ -1,9 +1,25 @@
 /*
  Copyright (c) 2017 John K. Bennett. All right reserved.
 
- ESP32_Servo.h - Servo library for ESP32 - Version 1
+ ESP32_Servo.h - Enhanced Servo library for ESP32 - Version 1
 
  Original Servo.h written by Michael Margolis in 2009
+
+ This library provides servo control with optimized hardware support:
+ - ESP32S3: MCPWM hardware acceleration for precise servo timing
+ - Fixed frequency mode for consistent servo operation
+ - Automatic hardware allocation with LEDC fallback
+
+ Key Features:
+ - Uses fixed-frequency PWM for servo compatibility
+ - MCPWM preferred on S3, LEDC fallback for maximum channels
+ - 50Hz default frequency with 1000-2000us pulse range
+ - Up to 16 servo channels (limited by available PWM hardware)
+
+ Usage:
+ - Servo myservo;              // Create servo instance
+ - myservo.attach(pin);        // Attach to pin with default range
+ - myservo.write(angle);       // Set servo angle (0-180 degrees)
 
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
@@ -101,7 +117,7 @@
 //#define REFRESH_CPS            50
 #define REFRESH_USEC         20000
 
-#define MAX_SERVOS              16     // no. of PWM channels in ESP32
+#define MAX_SERVOS              20     // maximum PWM channels supported (varies by ESP32 variant)
 
 /*
  * This group/channel/timmer mapping is for information only;
@@ -164,7 +180,7 @@ private:
 	int ticks = DEFAULT_PULSE_WIDTH_TICKS; // current pulse width on this channel
 	int timer_width_ticks = DEFAULT_TIMER_WIDTH_TICKS; // no. of ticks at rollover; varies with width
 	ESP32PWM * getPwm(); // get the PWM object
-	ESP32PWM pwm;
+	ESP32PWM pwm{false}; // fixed frequency for servo use
 	int REFRESH_CPS = 50;
 
 };

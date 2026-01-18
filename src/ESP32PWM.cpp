@@ -15,6 +15,10 @@ ESP32PWM * ESP32PWM::ChannelUsed[NUM_PWM]; // used to track whether a channel is
 long ESP32PWM::timerFreqSet[4] = { -1, -1, -1, -1 };
 int ESP32PWM::timerCount[4] = { 0, 0, 0, 0 };
 
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+MCPWMTimerInfo ESP32PWM::mcpwmTimers[MCPWM_NUM_UNITS][MCPWM_NUM_TIMERS_PER_UNIT];
+#endif
+
 static const char* TAG = "ESP32PWM";
 
 // The ChannelUsed array elements are 0 if never used, 1 if in use, and -1 if used and disposed
@@ -36,7 +40,7 @@ void ESP32PWM::allocateTimer(int timerNumber){
 	ESP32PWM::timerCount[timerNumber]=0;
 }
 
-ESP32PWM::ESP32PWM() {
+ESP32PWM::ESP32PWM(bool variableFrequency) : useVariableFrequency(variableFrequency) {
 	resolutionBits = 8;
 	pwmChannel = -1;
 	pin = -1;
@@ -44,21 +48,28 @@ ESP32PWM::ESP32PWM() {
 	if (PWMCount == -1) {
 		for (int i = 0; i < NUM_PWM; i++)
 			ChannelUsed[i] = NULL; // load invalid data into the storage array of pin mapping
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		// MCPWMTimerInfo struct is initialized with default values in the struct definition
+#endif
 		PWMCount = PWM_BASE_INDEX; // 0th channel does not work with the PWM system
 	}
 }
 
 ESP32PWM::~ESP32PWM() {
 	if (attached()) {
+		if (isMCPWM) {
+			// MCPWM detach not needed, deallocate handles it
+		} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-		ledcDetach(pin);
+			ledcDetach(pin);
 #else
-		ledcDetachPin(pin);
+			ledcDetachPin(pin);
 #endif
 #else
-		ledcDetachPin(pin);
+			ledcDetachPin(pin);
 #endif
+		}
 	}
 	deallocate();
 }
@@ -92,103 +103,205 @@ int ESP32PWM::timerAndIndexToChannel(int timerNum, int index) {
 }
 int ESP32PWM::allocatenext(double freq) {
 	long freqlocal = (long) freq;
-	if (pwmChannel < 0) {
-		for (int i = 0; i < 4; i++) {
-			bool freqAllocated = ((timerFreqSet[i] == freqlocal)
-					|| (timerFreqSet[i] == -1));
-			if (freqAllocated && timerCount[i] < 4) {
-				if (timerFreqSet[i] == -1) {
-					//Serial.println("Starting timer "+String(i)+" at freq "+String(freq));
-					timerFreqSet[i] = freqlocal;
-				}
-				//Serial.println("Free channel timer "+String(i)+" at freq "+String(freq)+" remaining "+String(4-timerCount[i]));
-
-				timerNum = i;
-				for (int index=0; index<4; ++index)
-				{
-					int myTimerNumber = timerAndIndexToChannel(timerNum,index);
-					if ((myTimerNumber >= 0)  && (!ChannelUsed[myTimerNumber]))
-					{
-						pwmChannel = myTimerNumber;
-// 						Serial.println(
-// 							"PWM on ledc channel #" + String(pwmChannel)
-// 									+ " using 'timer " + String(timerNum)
-// 									+ "' to freq " + String(freq) + "Hz");
-						ChannelUsed[pwmChannel] = this;
-						timerCount[timerNum]++;
-						PWMCount++;
-						myFreq = freq;
-						return pwmChannel;
+	if (pwmChannel < 0 && !isMCPWM) {  // not yet allocated
+		if (useVariableFrequency) {
+			// try LEDC first
+			for (int i = 0; i < 4; i++) {
+				bool freqAllocated = ((timerFreqSet[i] == freqlocal) || (timerFreqSet[i] == -1));
+				if (freqAllocated && timerCount[i] < 4) {
+					if (timerFreqSet[i] == -1) {
+						timerFreqSet[i] = freqlocal;
+					}
+					timerNum = i;
+					for (int index=0; index<4; ++index) {
+						int myTimerNumber = timerAndIndexToChannel(timerNum,index);
+						if ((myTimerNumber >= 0) && (!ChannelUsed[myTimerNumber])) {
+							pwmChannel = myTimerNumber;
+							ChannelUsed[pwmChannel] = this;
+							timerCount[timerNum]++;
+							PWMCount++;
+							myFreq = freq;
+							isMCPWM = false;
+							return pwmChannel;
+						}
 					}
 				}
-			} else {
-//				if(timerFreqSet[i]>0)
-//					Serial.println("Timer freq mismatch target="+String(freq)+" on timer "+String(i)+" was "+String(timerFreqSet[i]));
-//				else
-//					Serial.println("Timer out of channels target="+String(freq)+" on timer "+String(i)+" was "+String(timerCount[i]));
+			}
+			// if no LEDC, try MCPWM
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+			for(int u=0; u<MCPWM_NUM_UNITS; u++) {
+				for(int t=0; t<MCPWM_NUM_TIMERS_PER_UNIT; t++) {
+					if (mcpwmTimers[u][t].operatorCount == 0) {
+						mcpwmTimers[u][t].freq = freqlocal;
+						mcpwmUnit = (mcpwm_unit_t)u;
+						mcpwmTimer = (mcpwm_timer_t)t;
+						mcpwmOperator = MCPWM_OPR_A;
+						mcpwmTimers[u][t].operators[0] = this;
+						mcpwmTimers[u][t].operatorCount = 1;
+						PWMCount++;
+						myFreq = freq;
+						isMCPWM = true;
+						pwmChannel = -1; // not used
+						timerNum = -1;
+						return 0; // dummy
+					}
+				}
+			}
+#endif
+		} else {
+			// non-variable, prefer MCPWM with shared freq, fallback to LEDC
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+			for(int u=0; u<MCPWM_NUM_UNITS; u++) {
+				for(int t=0; t<MCPWM_NUM_TIMERS_PER_UNIT; t++) {
+					bool freqMatch = (mcpwmTimers[u][t].freq == freqlocal || mcpwmTimers[u][t].freq == -1);
+					if (freqMatch && mcpwmTimers[u][t].operatorCount < MCPWM_NUM_OPERATORS_PER_TIMER) {
+						if (mcpwmTimers[u][t].freq == -1) {
+							mcpwmTimers[u][t].freq = freqlocal;
+						}
+						mcpwmUnit = (mcpwm_unit_t)u;
+						mcpwmTimer = (mcpwm_timer_t)t;
+						int opIndex = mcpwmTimers[u][t].operatorCount;
+						mcpwmOperator = (opIndex == 0) ? MCPWM_OPR_A : MCPWM_OPR_B;
+						mcpwmTimers[u][t].operators[opIndex] = this;
+						mcpwmTimers[u][t].operatorCount++;
+						PWMCount++;
+						myFreq = freq;
+						isMCPWM = true;
+						pwmChannel = -1;
+						timerNum = -1;
+						return 0;
+					}
+				}
+			}
+#endif
+			// if no MCPWM available, fallback to LEDC shared freq
+			for (int i = 0; i < 4; i++) {
+				bool freqAllocated = ((timerFreqSet[i] == freqlocal) || (timerFreqSet[i] == -1));
+				if (freqAllocated && timerCount[i] < 4) {
+					if (timerFreqSet[i] == -1) {
+						timerFreqSet[i] = freqlocal;
+					}
+					timerNum = i;
+					for (int index = 0; index < 4; ++index) {
+						int myTimerNumber = timerAndIndexToChannel(timerNum, index);
+						if ((myTimerNumber >= 0) && (!ChannelUsed[myTimerNumber])) {
+							pwmChannel = myTimerNumber;
+							ChannelUsed[pwmChannel] = this;
+							timerCount[timerNum]++;
+							PWMCount++;
+							myFreq = freq;
+							isMCPWM = false;
+							return pwmChannel;
+						}
+					}
+				}
 			}
 		}
+	} else if (isMCPWM) {
+		return 0; // already allocated
 	} else {
 		return pwmChannel;
 	}
-	ESP_LOGE(TAG, 
-			"ERROR All PWM timers allocated! Can't accomodate %.3f Hz\r\nHalting...", freq);
-	while (1)
-		;
+	ESP_LOGE(TAG, "ERROR All PWM timers allocated! Can't accomodate %.3f Hz\r\nHalting...", freq);
+	while (1);
 }
 void ESP32PWM::deallocate() {
-	if (pwmChannel < 0)
-		return;
-	ESP_LOGI(TAG, "PWM deallocating LEDc #%d",pwmChannel);
-	timerCount[getTimer()]--;
-	if (timerCount[getTimer()] == 0) {
-		timerFreqSet[getTimer()] = -1; // last pwn closed out
+	if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		ESP_LOGI(TAG, "PWM deallocating MCPWM unit %d timer %d operator %d", mcpwmUnit, mcpwmTimer, mcpwmOperator);
+		mcpwmTimers[mcpwmUnit][mcpwmTimer].operatorCount--;
+		mcpwmTimers[mcpwmUnit][mcpwmTimer].operators[mcpwmOperator == MCPWM_OPR_A ? 0 : 1] = NULL;
+		if (mcpwmTimers[mcpwmUnit][mcpwmTimer].operatorCount == 0) {
+			mcpwmTimers[mcpwmUnit][mcpwmTimer].freq = -1;
+		}
+#endif
+	} else if (pwmChannel >= 0) {
+		ESP_LOGI(TAG, "PWM deallocating LEDc #%d",pwmChannel);
+		timerCount[getTimer()]--;
+		if (timerCount[getTimer()] == 0) {
+			timerFreqSet[getTimer()] = -1; // last pwn closed out
+		}
+		ChannelUsed[pwmChannel] = NULL;
+		pwmChannel = -1;
 	}
 	timerNum = -1;
 	attachedState = false;
-	ChannelUsed[pwmChannel] = NULL;
-	pwmChannel = -1;
+	isMCPWM = false;
 	PWMCount--;
-
 }
 
 int ESP32PWM::getChannel() {
-	if (pwmChannel < 0) {
+	if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		return (mcpwmUnit * 10 + mcpwmTimer * 2 + (mcpwmOperator == MCPWM_OPR_A ? 0 : 1)) + 100; // offset to avoid conflict
+#endif
+	} else if (pwmChannel < 0) {
 		ESP_LOGE(TAG, "FAIL! must setup() before using get channel!");
 	}
 	return pwmChannel;
 }
 
 double ESP32PWM::setup(double freq, uint8_t resolution_bits) {
-	checkFrequencyForSideEffects(freq);
+	if (!isMCPWM) {
+		checkFrequencyForSideEffects(freq);
+	}
 
 	resolutionBits = resolution_bits;
 	if (attached()) {
+		if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+			// for MCPWM, re-init timer with new freq
+			mcpwm_config_t pwm_config;
+			pwm_config.frequency = freq;
+			pwm_config.cmpr_a = 0;
+			pwm_config.cmpr_b = 0;
+			pwm_config.counter_mode = MCPWM_UP_COUNTER;
+			pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
+			mcpwm_init(mcpwmUnit, mcpwmTimer, &pwm_config);
+			mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+			mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
+#endif
+		} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-		ledcDetach(pin);
-		double val = ledcAttachChannel(getPin(), freq, resolution_bits, getChannel());
+			ledcDetach(pin);
+			double val = ledcAttachChannel(getPin(), freq, resolution_bits, getChannel());
 #else
-		ledcDetachPin(pin);
-		double val = ledcSetup(getChannel(), freq, resolution_bits);
+			ledcDetachPin(pin);
+			double val = ledcSetup(getChannel(), freq, resolution_bits);
 #endif
 #else
-		ledcDetachPin(pin);
-		double val = ledcSetup(getChannel(), freq, resolution_bits);
+			ledcDetachPin(pin);
+			double val = ledcSetup(getChannel(), freq, resolution_bits);
 #endif
-
+		}
 		attachPin(pin);
-		return val;
+		return freq;
 	}
+	if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		mcpwm_config_t pwm_config;
+		pwm_config.frequency = freq;
+		pwm_config.cmpr_a = 0;
+		pwm_config.cmpr_b = 0;
+		pwm_config.counter_mode = MCPWM_UP_COUNTER;
+		pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
+		mcpwm_init(mcpwmUnit, mcpwmTimer, &pwm_config);
+		mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+		mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
+#endif
+		return freq;
+	} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-	return ledcAttachChannel(getPin(), freq, resolution_bits, getChannel());
+		return ledcAttachChannel(getPin(), freq, resolution_bits, getChannel());
 #else
-	return ledcSetup(getChannel(), freq, resolution_bits);
+		return ledcSetup(getChannel(), freq, resolution_bits);
 #endif
 #else
-	return ledcSetup(getChannel(), freq, resolution_bits);
+		return ledcSetup(getChannel(), freq, resolution_bits);
 #endif
+	}
 }
 double ESP32PWM::getDutyScaled() {
 	return mapf((double) myDuty, 0, (double) ((1 << resolutionBits) - 1), 0.0,
@@ -199,15 +312,22 @@ void ESP32PWM::writeScaled(double duty) {
 }
 void ESP32PWM::write(uint32_t duty) {
 	myDuty = duty;
+	if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		float duty_percent = (float)duty / (1 << resolutionBits) * 100.0f;
+		mcpwm_set_duty(mcpwmUnit, mcpwmTimer, mcpwmOperator, duty_percent);
+#endif
+	} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-	ledcWrite(getPin(), duty);
+		ledcWrite(getPin(), duty);
 #else
-	ledcWrite(getChannel(), duty);
+		ledcWrite(getChannel(), duty);
 #endif
 #else
-	ledcWrite(getChannel(), duty);
+		ledcWrite(getChannel(), duty);
 #endif
+	}
 }
 void ESP32PWM::adjustFrequencyLocal(double freq, double dutyScaled) {
 	timerFreqSet[getTimer()] = (long) freq;
@@ -241,28 +361,60 @@ void ESP32PWM::adjustFrequencyLocal(double freq, double dutyScaled) {
 	}
 }
 void ESP32PWM::adjustFrequency(double freq, double dutyScaled) {
+	if (!useVariableFrequency) {
+		ESP_LOGE(TAG, "ERROR: Cannot change frequency on fixed-frequency PWM channel (pin %d). Frequency is locked for shared timer operation.", pin);
+		return;
+	}
 	if(dutyScaled<0)
 		dutyScaled=getDutyScaled();
 	writeScaled(dutyScaled);
-	for (int i = 0; i < timerCount[getTimer()]; i++) {
-		int pwm = timerAndIndexToChannel(getTimer(), i);
-		if (ChannelUsed[pwm] != NULL) {
-			if (ChannelUsed[pwm]->myFreq != freq) {
-				ChannelUsed[pwm]->adjustFrequencyLocal(freq,
-						ChannelUsed[pwm]->getDutyScaled());
+	if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		mcpwmTimerFreq[mcpwmUnit][mcpwmTimer] = (long)freq;
+		myFreq = freq;
+		// re-init timer with new freq
+		mcpwm_config_t pwm_config;
+		pwm_config.frequency = freq;
+		pwm_config.cmpr_a = 0;
+		pwm_config.cmpr_b = 0;
+		pwm_config.counter_mode = MCPWM_UP_COUNTER;
+		pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
+		mcpwm_init(mcpwmUnit, mcpwmTimer, &pwm_config);
+		mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+		mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
+		// update all operators on this timer
+		for (int i = 0; i < mcpwmTimerOperatorCount[mcpwmUnit][mcpwmTimer]; i++) {
+			if (mcpwmOperators[mcpwmUnit][mcpwmTimer][i] != NULL) {
+				mcpwmOperators[mcpwmUnit][mcpwmTimer][i]->myFreq = freq;
+				mcpwmOperators[mcpwmUnit][mcpwmTimer][i]->writeScaled(mcpwmOperators[mcpwmUnit][mcpwmTimer][i]->getDutyScaled());
+			}
+		}
+#endif
+	} else {
+		for (int i = 0; i < timerCount[getTimer()]; i++) {
+			int pwm = timerAndIndexToChannel(getTimer(), i);
+			if (ChannelUsed[pwm] != NULL) {
+				if (ChannelUsed[pwm]->myFreq != freq) {
+					ChannelUsed[pwm]->adjustFrequencyLocal(freq,
+							ChannelUsed[pwm]->getDutyScaled());
+				}
 			}
 		}
 	}
 }
 double ESP32PWM::writeTone(double freq) {
-	for (int i = 0; i < timerCount[getTimer()]; i++) {
-		int pwm = timerAndIndexToChannel(getTimer(), i);
-		if (ChannelUsed[pwm] != NULL) {
-			if (ChannelUsed[pwm]->myFreq != freq) {
-				ChannelUsed[pwm]->adjustFrequencyLocal(freq,
-						ChannelUsed[pwm]->getDutyScaled());
+	if (isMCPWM) {
+		adjustFrequency(freq, 0.5);
+	} else {
+		for (int i = 0; i < timerCount[getTimer()]; i++) {
+			int pwm = timerAndIndexToChannel(getTimer(), i);
+			if (ChannelUsed[pwm] != NULL) {
+				if (ChannelUsed[pwm]->myFreq != freq) {
+					ChannelUsed[pwm]->adjustFrequencyLocal(freq,
+							ChannelUsed[pwm]->getDutyScaled());
+				}
+				write(1 << (resolutionBits-1)); // writeScaled(0.5);
 			}
-			write(1 << (resolutionBits-1)); // writeScaled(0.5);
 		}
 	}
 
@@ -282,16 +434,22 @@ double ESP32PWM::writeNote(note_t note, uint8_t octave) {
 	return writeTone(noteFreq);
 }
 uint32_t ESP32PWM::read() {
+	if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+		// MCPWM doesn't have a read function, return stored duty
+		return myDuty;
+#endif
+	} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-	return ledcRead(getPin());
+		return ledcRead(getPin());
 #else
-	return ledcRead(getChannel());
+		return ledcRead(getChannel());
 #endif
 #else
-	return ledcRead(getChannel());
+		return ledcRead(getChannel());
 #endif
-
+	}
 }
 double ESP32PWM::readFreq() {
 	return myFreq;
@@ -304,30 +462,37 @@ void ESP32PWM::attachPin(uint8_t pin) {
 
 	if (hasPwm(pin)) {
 		attach(pin);
-		bool success=true;
+		bool success = true;
+		if (isMCPWM) {
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+			mcpwm_io_signals_t signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM0A : MCPWM0B;
+			if (mcpwmUnit == MCPWM_UNIT_1) signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM1A : MCPWM1B;
+			mcpwm_gpio_init(mcpwmUnit, signal, pin);
+#endif
+		} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-		success=ledcAttachChannel(pin, readFreq(), resolutionBits, getChannel());
+			success = ledcAttachChannel(pin, readFreq(), resolutionBits, getChannel());
 #else
-		ledcAttachPin(pin, getChannel());
+			ledcAttachPin(pin, getChannel());
 #endif
 #else
-		ledcAttachPin(pin, getChannel());
+			ledcAttachPin(pin, getChannel());
 #endif
-		if(success)
-			return;
+		}
+		if (success) return;
 		ESP_LOGE(TAG, "ERROR PWM channel failed to configure on pin %d!", pin);
 		return;
 	}
-		
+
 #if defined(CONFIG_IDF_TARGET_ESP32S2)
-						ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-21,26,33-42",pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-21,26,33-42", pin);
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
-						ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-21,35-45,47-48",pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-21,35-45,47-48", pin);
 #elif defined(CONFIG_IDF_TARGET_ESP32C3)
-						ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-10,18-21",pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-10,18-21", pin);
 #else
-						ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 2,4,5,12-19,21-23,25-27,32-33",pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 2,4,5,12-19,21-23,25-27,32-33", pin);
 #endif
 
 }
@@ -343,16 +508,17 @@ void ESP32PWM::attachPin(uint8_t pin, double freq, uint8_t resolution_bits) {
 		ESP_LOGE(TAG, "ERROR Pin Failed %d ",pin);
 }
 void ESP32PWM::detachPin(int pin) {
+	if (!isMCPWM) {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-
-	ledcDetach(pin);
+		ledcDetach(pin);
 #else
-	ledcDetachPin(pin);
+		ledcDetachPin(pin);
 #endif
 #else
-	ledcDetachPin(pin);
+		ledcDetachPin(pin);
 #endif
+	}
 	deallocate();
 }
 /* Side effects of frequency changes happen because of shared timers
@@ -408,5 +574,17 @@ ESP32PWM* pwmFactory(int pin) {
 			if (ESP32PWM::ChannelUsed[i]->getPin() == pin)
 				return ESP32PWM::ChannelUsed[i];
 		}
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+	for(int u=0; u<MCPWM_NUM_UNITS; u++) {
+		for(int t=0; t<MCPWM_NUM_TIMERS_PER_UNIT; t++) {
+			for(int o=0; o<MCPWM_NUM_OPERATORS_PER_TIMER; o++) {
+				if (ESP32PWM::mcpwmTimers[u][t].operators[o] != NULL) {
+					if (ESP32PWM::mcpwmTimers[u][t].operators[o]->getPin() == pin)
+						return ESP32PWM::mcpwmTimers[u][t].operators[o];
+				}
+			}
+		}
+	}
+#endif
 	return NULL;
 }
