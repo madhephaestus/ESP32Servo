@@ -45,11 +45,15 @@ ESP32PWM::ESP32PWM(bool variableFrequency) : useVariableFrequency(variableFreque
 	pwmChannel = -1;
 	pin = -1;
 	myFreq = -1;
+	isMCPWM = false; // Explicitly initialize to false
 	if (PWMCount == -1) {
 		for (int i = 0; i < NUM_PWM; i++)
 			ChannelUsed[i] = NULL; // load invalid data into the storage array of pin mapping
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 		// MCPWMTimerInfo struct is initialized with default values in the struct definition
+		ESP_LOGI(TAG, "ESP32S3 detected - MCPWM support enabled");
+#else
+		ESP_LOGI(TAG, "Non-ESP32S3 target - using LEDC only");
 #endif
 		PWMCount = PWM_BASE_INDEX; // 0th channel does not work with the PWM system
 	}
@@ -127,7 +131,7 @@ int ESP32PWM::allocatenext(double freq) {
 					}
 				}
 			}
-			// if no LEDC, try MCPWM
+			// if no LEDC, try MCPWM (ESP32S3 only)
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 			for(int u=0; u<MCPWM_NUM_UNITS; u++) {
 				for(int t=0; t<MCPWM_NUM_TIMERS_PER_UNIT; t++) {
@@ -214,6 +218,10 @@ void ESP32PWM::deallocate() {
 		if (mcpwmTimers[mcpwmUnit][mcpwmTimer].operatorCount == 0) {
 			mcpwmTimers[mcpwmUnit][mcpwmTimer].freq = -1;
 		}
+#else
+		// This should never happen - isMCPWM should only be true on ESP32S3
+		ESP_LOGE(TAG, "ERROR: MCPWM deallocate attempted on non-ESP32S3 target!");
+		isMCPWM = false; // Reset to safe state
 #endif
 	} else if (pwmChannel >= 0) {
 		ESP_LOGI(TAG, "PWM deallocating LEDc #%d",pwmChannel);
@@ -234,6 +242,11 @@ int ESP32PWM::getChannel() {
 	if (isMCPWM) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 		return (mcpwmUnit * 10 + mcpwmTimer * 2 + (mcpwmOperator == MCPWM_OPR_A ? 0 : 1)) + 100; // offset to avoid conflict
+#else
+		// This should never happen - isMCPWM should only be true on ESP32S3
+		ESP_LOGE(TAG, "ERROR: MCPWM getChannel attempted on non-ESP32S3 target!");
+		isMCPWM = false; // Reset to safe state
+		return -1; // Return invalid channel as fallback
 #endif
 	} else if (pwmChannel < 0) {
 		ESP_LOGE(TAG, "FAIL! must setup() before using get channel!");
@@ -316,6 +329,10 @@ void ESP32PWM::write(uint32_t duty) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 		float duty_percent = (float)duty / (1 << resolutionBits) * 100.0f;
 		mcpwm_set_duty(mcpwmUnit, mcpwmTimer, mcpwmOperator, duty_percent);
+#else
+		// This should never happen - isMCPWM should only be true on ESP32S3
+		ESP_LOGE(TAG, "ERROR: MCPWM operation attempted on non-ESP32S3 target!");
+		isMCPWM = false; // Reset to safe state
 #endif
 	} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
@@ -370,7 +387,7 @@ void ESP32PWM::adjustFrequency(double freq, double dutyScaled) {
 	writeScaled(dutyScaled);
 	if (isMCPWM) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
-		mcpwmTimerFreq[mcpwmUnit][mcpwmTimer] = (long)freq;
+		mcpwmTimers[mcpwmUnit][mcpwmTimer].freq = (long)freq;
 		myFreq = freq;
 		// re-init timer with new freq
 		mcpwm_config_t pwm_config;
@@ -383,10 +400,10 @@ void ESP32PWM::adjustFrequency(double freq, double dutyScaled) {
 		mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
 		mcpwm_set_duty_type(mcpwmUnit, mcpwmTimer, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
 		// update all operators on this timer
-		for (int i = 0; i < mcpwmTimerOperatorCount[mcpwmUnit][mcpwmTimer]; i++) {
-			if (mcpwmOperators[mcpwmUnit][mcpwmTimer][i] != NULL) {
-				mcpwmOperators[mcpwmUnit][mcpwmTimer][i]->myFreq = freq;
-				mcpwmOperators[mcpwmUnit][mcpwmTimer][i]->writeScaled(mcpwmOperators[mcpwmUnit][mcpwmTimer][i]->getDutyScaled());
+		for (int i = 0; i < mcpwmTimers[mcpwmUnit][mcpwmTimer].operatorCount; i++) {
+			if (mcpwmTimers[mcpwmUnit][mcpwmTimer].operators[i] != NULL) {
+				mcpwmTimers[mcpwmUnit][mcpwmTimer].operators[i]->myFreq = freq;
+				mcpwmTimers[mcpwmUnit][mcpwmTimer].operators[i]->writeScaled(mcpwmTimers[mcpwmUnit][mcpwmTimer].operators[i]->getDutyScaled());
 			}
 		}
 #endif
@@ -438,6 +455,11 @@ uint32_t ESP32PWM::read() {
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 		// MCPWM doesn't have a read function, return stored duty
 		return myDuty;
+#else
+		// This should never happen - isMCPWM should only be true on ESP32S3
+		ESP_LOGE(TAG, "ERROR: MCPWM read attempted on non-ESP32S3 target!");
+		isMCPWM = false; // Reset to safe state
+		return myDuty; // Return stored duty as fallback
 #endif
 	} else {
 #ifdef ESP_ARDUINO_VERSION_MAJOR
