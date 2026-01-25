@@ -45,6 +45,8 @@
 #define MCPWM_NUM_TIMERS_PER_UNIT 3
 #define MCPWM_NUM_OPERATORS_PER_TIMER 2
 
+class ESP32PWM; // Forward declaration
+
 struct MCPWMTimerInfo {
     bool initialized = false;
     long freq = -1;
