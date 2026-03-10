@@ -10,6 +10,7 @@
  * Key Features:
  * - Dual hardware support (LEDC + MCPWM on S3)
  * - 20 total PWM channels on ESP32S3 (8 LEDC + 12 MCPWM)
+ * - 12 (6 supported) total PWM channels on ESP32C5 (6 LEDC + 6 MCPWM (not supported by library yet))
  * - Frequency locking for fixed-frequency applications (servos)
  * - Seamless hardware fallback when preferred hardware unavailable
  *
@@ -34,6 +35,14 @@
 #define NUM_PWM 6
 #elif defined(CONFIG_IDF_TARGET_ESP32S2)   ||  defined(CONFIG_IDF_TARGET_ESP32S3)
 #define NUM_PWM 8
+#elif defined(CONFIG_IDF_TARGET_ESP32C5)
+/**
+ * @brief Number of PWM channels
+ * @details The ESP32C5 has 6 LEDC channels and 6 MCPWM channels, but the MCPWM channels require further changes
+ * @see Page 5 of https://documentation.espressif.com/esp32-c5_datasheet_en.pdf
+ */
+// #define NUM_PWM 12 // TODO: Add MCPWM support for the ESP32-C5
+#define NUM_PWM 6 // LEDC channels only
 #else
 #define NUM_PWM 16
 #endif
