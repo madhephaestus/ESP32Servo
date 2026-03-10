@@ -112,8 +112,6 @@ if(
 			    ESP_LOGE(TAG, "This ESP32S3 pin can not be a servo: %d Servo available on: 1-21,35-45,47-48", pin);
 #elif defined(CONFIG_IDF_TARGET_ESP32C3)
 				ESP_LOGE(TAG, "This ESP32C3 pin can not be a servo: %d Servo available on: 1-10,18-21", pin);
-#elif defined(CONFIG_IDF_TARGET_ESP32C3)
-				ESP_LOGE(TAG, "This pin can not be a servo: %d Servo available on: 1-10,18-21", pin);
 #elif defined(CONFIG_IDF_TARGET_ESP32C5)
 				ESP_LOGE(TAG, "This ESP32C5 pin can not be a servo: %d Servo available on: 0-14,12-14,23-28", pin);
 #else
