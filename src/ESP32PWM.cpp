@@ -52,6 +52,8 @@ ESP32PWM::ESP32PWM(bool variableFrequency) : useVariableFrequency(variableFreque
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 		// MCPWMTimerInfo struct is initialized with default values in the struct definition
 		ESP_LOGI(TAG, "ESP32S3 detected - MCPWM support enabled");
+#elif defined(CONFIG_IDF_TARGET_ESP32C5)
+		ESP_LOGI(TAG, "ESP32C5 detected - MCPWM support not enabled");
 #else
 		ESP_LOGI(TAG, "Non-ESP32S3 target - using LEDC only");
 #endif
@@ -508,13 +510,15 @@ void ESP32PWM::attachPin(uint8_t pin) {
 	}
 
 #if defined(CONFIG_IDF_TARGET_ESP32S2)
-	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-21,26,33-42", pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on the ESP32S2 pin requested! %d PWM available on: 1-21,26,33-42", pin);
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
-	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-21,35-45,47-48", pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on the ESP32S3 pin requested! %d PWM available on: 1-21,35-45,47-48", pin);
+#elif defined(CONFIG_IDF_TARGET_ESP32C5)
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on the ESP32C5 pin requested! %d PWM available on: 1-21,35-45,47-48", pin);
 #elif defined(CONFIG_IDF_TARGET_ESP32C3)
-	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 1-10,18-21", pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on the ESP32C3 pin requested! %d PWM available on: 1-10,18-21", pin);
 #else
-	ESP_LOGE(TAG, "ERROR PWM channel unavailable on pin requested! %d PWM available on: 2,4,5,12-19,21-23,25-27,32-33", pin);
+	ESP_LOGE(TAG, "ERROR PWM channel unavailable on the ESP32 pin requested! %d PWM available on: 2,4,5,12-19,21-23,25-27,32-33", pin);
 #endif
 
 }

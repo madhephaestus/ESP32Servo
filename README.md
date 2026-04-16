@@ -22,6 +22,7 @@ This library provides enhanced PWM control for ESP32 boards, faithfully replicat
 | ESP32S2       | 8             | -              | 8              |
 | ESP32         | 16            | -              | 16             |
 | ESP32C3       | 6             | -              | 6              |
+| ESP32C5       | 6             | 6 (not implemented) | 12 (6 supported) |
 
 ## Usage Examples
 
@@ -135,3 +136,4 @@ MAXIMUM number of servos: Varies by ESP32 variant
 - ESP32: 16 channels (16 LEDC)
 - ESP32S2: 8 channels (8 LEDC)
 - ESP32C3: 6 channels (6 LEDC)
+- ESP32C5: 12 (6 implemented) channels (6 LEDC + 6 MCPWM (not supported))
