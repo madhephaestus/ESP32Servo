@@ -489,8 +489,26 @@ void ESP32PWM::attachPin(uint8_t pin) {
 		bool success = true;
 		if (isMCPWM) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
-			mcpwm_io_signals_t signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM0A : MCPWM0B;
-			if (mcpwmUnit == MCPWM_UNIT_1) signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM1A : MCPWM1B;
+			mcpwm_io_signals_t signal;
+
+			if (mcpwmUnit == MCPWM_UNIT_0)
+			{
+				if (mcpwmTimer == MCPWM_TIMER_0)
+					signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM0A : MCPWM0B;
+				else if (mcpwmTimer == MCPWM_TIMER_1)
+					signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM1A : MCPWM1B;
+				else
+					signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM2A : MCPWM2B;
+			}
+			else
+			{
+				if (mcpwmTimer == MCPWM_TIMER_0)
+					signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM0A : MCPWM0B;
+				else if (mcpwmTimer == MCPWM_TIMER_1)
+					signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM1A : MCPWM1B;
+				else
+					signal = (mcpwmOperator == MCPWM_OPR_A) ? MCPWM2A : MCPWM2B;
+			}
 			mcpwm_gpio_init(mcpwmUnit, signal, pin);
 #endif
 		} else {
