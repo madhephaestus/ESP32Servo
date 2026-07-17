@@ -571,6 +571,8 @@ void ESP32PWM::detachPin(int pin) {
 bool ESP32PWM::checkFrequencyForSideEffects(double freq) {
 
 	allocatenext(freq);
+	if (isMCPWM || getTimer() < 0)
+		return true;
 	for (int i = 0; i < timerCount[getTimer()]; i++) {
 		int pwm = timerAndIndexToChannel(getTimer(), i);
 
