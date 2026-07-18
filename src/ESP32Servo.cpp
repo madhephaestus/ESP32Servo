@@ -229,17 +229,16 @@ void Servo::setTimerWidth(int value)
     else if (value > MAXIMUM_TIMER_WIDTH)
         value = MAXIMUM_TIMER_WIDTH;
         
-    // Fix the current ticks value after timer width change
-    // The user can reset the tick value with a write() or writeUs()
-    int widthDifference = this->timer_width - value;
-    // if positive multiply by diff; if neg, divide
+    // Fix the current ticks value after timer width change. Each extra timer
+    // bit doubles the number of ticks in the same pulse width.
+    int widthDifference = value - this->timer_width;
     if (widthDifference > 0)
     {
-        this->ticks = widthDifference * this->ticks;
+        this->ticks *= (1 << widthDifference);
     }
     else if (widthDifference < 0)
     {
-        this->ticks = this->ticks/-widthDifference;
+        this->ticks /= (1 << -widthDifference);
     }
     
     this->timer_width = value;
